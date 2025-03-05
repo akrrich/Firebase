@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "224598323285",
+    "firebase_url": "https://testeo-fa807-default-rtdb.firebaseio.com",
+    "project_id": "testeo-fa807",
+    "storage_bucket": "testeo-fa807.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:224598323285:android:5e8b2ea046da8ee540a4dc",
+        "android_client_info": {
+          "package_name": "com.DefaultCompany.Firebase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmna_7x1ot7YRj6B9ZvE-tcwKlhG7dQno"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
