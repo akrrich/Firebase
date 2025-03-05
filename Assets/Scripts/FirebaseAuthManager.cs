@@ -14,8 +14,6 @@ public class FirebaseAuthManager : MonoBehaviour
     public TMP_InputField passwordInput;
     public TMP_InputField usernameInput;
 
-    private float startTime;
-
 
     void Awake()
     {
@@ -36,11 +34,6 @@ public class FirebaseAuthManager : MonoBehaviour
                 Debug.LogError($"No se pudo inicializar Firebase: {status}");
             }
         });
-    }
-
-    void Update()
-    {
-        
     }
 
 
