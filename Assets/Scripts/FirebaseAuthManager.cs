@@ -129,23 +129,8 @@ public class FirebaseAuthManager : MonoBehaviour
 
             StartCoroutine(SendVerificationEmail(newUser));
 
-            float startTime = Time.time;
+            SaveUserToDatabase(newUser.UserId, username, email);
 
-            while (!newUser.IsEmailVerified && Time.time - startTime < 120f) 
-            {
-                yield return null; // Esperar el siguiente frame
-            }
-
-            if (!newUser.IsEmailVerified)
-            {
-                DeleteUserFromDatabase(newUser);
-                Debug.LogError("El usuario no verificó su correo a tiempo. Eliminando usuario.");
-            }
-            else
-            {
-                SaveUserToDatabase(newUser.UserId, username, email);
-                Debug.Log("Usuario guardado en la base de datos después de la verificación del correo.");
-            }
         }
     }
 
