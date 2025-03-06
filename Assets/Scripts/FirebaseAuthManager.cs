@@ -13,11 +13,22 @@ public class FirebaseAuthManager : MonoBehaviour
     [SerializeField] private TMP_InputField emailInput;
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_InputField usernameInput;
+    [SerializeField] private TextMeshProUGUI messageDisplay;
+
+    private string userType;
 
 
     void Awake()
     {
         InitializeFirebase();
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.T) && userType == "Admin")
+        {
+            SendMessageToDatabase("Mensaje de prueba enviado por un Admin.");
+        }
     }
 
 
@@ -28,7 +39,7 @@ public class FirebaseAuthManager : MonoBehaviour
         string password = passwordInput.text;
         string username = usernameInput.text;
 
-        // Validacion provisoria
+        // Validación provisoria
         if (email != "" && password.Length >= 6 && username != "")
         {
             RegisterUser(email, password, username);
@@ -39,13 +50,13 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
-    // Función llamada cuando se presiona el botón de incio de sesion
+    // Función llamada cuando se presiona el botón de inicio de sesión
     public void OnLoginButtonClicked()
     {
         string email = emailInput.text;
         string password = passwordInput.text;
 
-        // Validacion provisoria
+        // Validación provisoria
         if (email != "" && password.Length >= 6)
         {
             LoginUser(email, password);
@@ -56,10 +67,26 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
+    // Función llamada cuando se presiona el botón de crear consorcio
+    public void OnConsorcioCreate()
+    {
+        string direccion = "Pueyrredon 1874";
+        int lotes = 20;
+
+        FirebaseUser user = auth.CurrentUser;
+
+        if (user != null)
+        {
+            StartCoroutine(CreateConsorcioForUser(user, direccion, lotes));
+        }
+        else
+        {
+            Debug.LogError("No hay usuario autenticado.");
+        }
+    }
 
     private void InitializeFirebase()
     {
-        // Verificar si Firebase está correctamente configurado
         FirebaseApp.CheckAndFixDependenciesAsync().ContinueWith(task =>
         {
             DependencyStatus status = task.Result;
@@ -70,7 +97,6 @@ public class FirebaseAuthManager : MonoBehaviour
 
                 Debug.Log("Firebase inicializado correctamente.");
             }
-
             else
             {
                 Debug.LogError($"No se pudo inicializar Firebase: {status}");
@@ -99,7 +125,8 @@ public class FirebaseAuthManager : MonoBehaviour
             if (user.IsEmailVerified)
             {
                 Debug.Log("Inicio de sesión exitoso!");
-                // continuar con el flujo de inicio de sesión
+                StartCoroutine(GetUserType(user)); // Obtener el tipo de usuario
+                StartListeningForMessages(); // Comenzar a escuchar mensajes en tiempo real
             }
             else
             {
@@ -129,35 +156,8 @@ public class FirebaseAuthManager : MonoBehaviour
 
             StartCoroutine(SendVerificationEmail(newUser));
 
-            SaveUserToDatabase(newUser.UserId, username, email);
-
+            SaveUserToDatabase(newUser, username, email);
         }
-    }
-
-    private void SaveUserToDatabase(string userId, string username, string email)
-    {
-        User newUser = new User(username, email);
-        string json = JsonUtility.ToJson(newUser);
-        databaseRef.Child("users").Child(userId).SetRawJsonValueAsync(json);
-    }
-
-    private void DeleteUserFromDatabase(FirebaseUser user)
-    {
-        // Eliminar el usuario de la base de datos
-        databaseRef.Child("users").Child(user.UserId).RemoveValueAsync();
-
-        // Eliminar el usuario de Firebase
-        user.DeleteAsync().ContinueWith(task =>
-        {
-            if (task.Exception != null)
-            {
-                Debug.LogError($"Error al eliminar usuario: {task.Exception}");
-            }
-            else
-            {
-                Debug.Log("Usuario eliminado correctamente.");
-            }
-        });
     }
 
     private IEnumerator SendVerificationEmail(FirebaseUser user)
@@ -174,17 +174,114 @@ public class FirebaseAuthManager : MonoBehaviour
             Debug.Log("Correo de verificación enviado!");
         }
     }
-}
 
-[System.Serializable]
-public class User
-{
-    public string email;
-    public string username;
-
-    public User(string username, string email)
+    private void SaveUserToDatabase(FirebaseUser user, string username, string email)
     {
-        this.username = username;
-        this.email = email;
+        User newUser = new User(username, email, "Admin"); // Por defecto, el usuario se crea como "Admin"
+        string json = JsonUtility.ToJson(newUser);
+        databaseRef.Child("users").Child(user.UserId).SetRawJsonValueAsync(json);
+    }
+
+    private void DeleteUserFromDatabase(FirebaseUser user)
+    {
+        databaseRef.Child("users").Child(user.UserId).RemoveValueAsync();
+        user.DeleteAsync().ContinueWith(task =>
+        {
+            if (task.Exception != null)
+            {
+                Debug.LogError($"Error al eliminar usuario: {task.Exception}");
+            }
+            else
+            {
+                Debug.Log("Usuario eliminado correctamente.");
+            }
+        });
+    }
+
+    private IEnumerator GetUserType(FirebaseUser user)
+    {
+        var userRef = databaseRef.Child("users").Child(user.UserId);
+        var userTask = userRef.GetValueAsync();
+
+        yield return new WaitUntil(() => userTask.IsCompleted);
+
+        if (userTask.Exception != null)
+        {
+            Debug.LogError($"Error al obtener el userType: {userTask.Exception}");
+        }
+        else
+        {
+            DataSnapshot snapshot = userTask.Result;
+            if (snapshot.Exists && snapshot.HasChild("userType"))
+            {
+                userType = snapshot.Child("userType").Value.ToString();
+                Debug.Log($"UserType del usuario: {userType}");
+            }
+        }
+    }
+
+    private void SendMessageToDatabase(string message)
+    {
+        string messageId = databaseRef.Child("messages").Push().Key;
+        databaseRef.Child("messages").Child(messageId).SetValueAsync(message);
+    }
+
+    private void StartListeningForMessages()
+    {
+        databaseRef.Child("messages").ValueChanged += (object sender, ValueChangedEventArgs args) =>
+        {
+            if (args.DatabaseError != null)
+            {
+                Debug.LogError($"Error en la base de datos: {args.DatabaseError.Message}");
+                return;
+            }
+
+            string latestMessage = "";
+            foreach (var child in args.Snapshot.Children)
+            {
+                latestMessage = child.Value.ToString(); // Último mensaje
+            }
+
+            ShowMessageOnScreen(latestMessage);
+        };
+    }
+
+    private IEnumerator CreateConsorcioForUser(FirebaseUser userId, string direccion, int lotes)
+    {
+        string consorcioId = databaseRef.Child("consorcios").Push().Key;
+        Consorcios newConsorcio = new Consorcios(direccion, lotes);
+        string jsonConsorcio = JsonUtility.ToJson(newConsorcio);
+
+        // Guardar el consorcio en la base de datos
+        var consorcioTask = databaseRef.Child("consorcios").Child(consorcioId).SetRawJsonValueAsync(jsonConsorcio);
+        yield return new WaitUntil(() => consorcioTask.IsCompleted);
+
+        if (consorcioTask.Exception != null)
+        {
+            Debug.LogError($"Error al crear consorcio: {consorcioTask.Exception}");
+            yield break;
+        }
+
+        Debug.Log("Consorcio creado correctamente en la base de datos.");
+
+        // Agregar el ID del consorcio a la lista de consorcios del usuario
+        var userConsorciosRef = databaseRef.Child("users").Child(userId.UserId).Child("consorcios").Child(consorcioId);
+        var userConsorcioTask = userConsorciosRef.SetRawJsonValueAsync(jsonConsorcio);
+        yield return new WaitUntil(() => userConsorcioTask.IsCompleted);
+
+        if (userConsorcioTask.Exception != null)
+        {
+            Debug.LogError($"Error al actualizar el usuario con el consorcio: {userConsorcioTask.Exception}");
+        }
+        else
+        {
+            Debug.Log("Consorcio agregado correctamente al usuario.");
+        }
+    }
+
+    private void ShowMessageOnScreen(string message)
+    {
+        messageDisplay.text = message; // Mostrar mensaje en UI
+        Debug.Log($"Mensaje en pantalla: {message}");
     }
 }
