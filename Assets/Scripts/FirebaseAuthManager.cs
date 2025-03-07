@@ -14,6 +14,8 @@ public class FirebaseAuthManager : MonoBehaviour
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_InputField usernameInput;
     [SerializeField] private TextMeshProUGUI messageDisplay;
+    [SerializeField] private TextMeshProUGUI consorcioDireccionText;
+    [SerializeField] private TextMeshProUGUI consrocioLotesText;
 
     private string userType;
 
@@ -83,6 +85,14 @@ public class FirebaseAuthManager : MonoBehaviour
         {
             Debug.LogError("No hay usuario autenticado.");
         }
+    }
+
+    // Función llamada cuando se presiona el botón de mostrar consorcio
+    public void ShowConsorcio()
+    {
+        FirebaseUser user = auth.CurrentUser;
+
+        StartCoroutine(GetConsorciosForUser(user));
     }
 
     private void InitializeFirebase()
@@ -246,6 +256,12 @@ public class FirebaseAuthManager : MonoBehaviour
         };
     }
 
+    private void ShowMessageOnScreen(string message)
+    {
+        messageDisplay.text = message; // Mostrar mensaje en UI
+        Debug.Log($"Mensaje en pantalla: {message}");
+    }
+
     private IEnumerator CreateConsorcioForUser(FirebaseUser userId, string direccion, int lotes)
     {
         string consorcioId = databaseRef.Child("consorcios").Push().Key;
@@ -279,9 +295,41 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
-    private void ShowMessageOnScreen(string message)
+    private IEnumerator GetConsorciosForUser(FirebaseUser user)
     {
-        messageDisplay.text = message; // Mostrar mensaje en UI
-        Debug.Log($"Mensaje en pantalla: {message}");
+        // Referencia a los consorcios del usuario en la base de datos
+        var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
+        var consorciosTask = userConsorciosRef.GetValueAsync();
+
+        yield return new WaitUntil(() => consorciosTask.IsCompleted);
+
+        if (consorciosTask.Exception != null)
+        {
+            Debug.LogError($"Error al obtener los consorcios del usuario: {consorciosTask.Exception}");
+        }
+        else
+        {
+            DataSnapshot consorciosSnapshot = consorciosTask.Result;
+
+            // Si el usuario tiene consorcios
+            if (consorciosSnapshot.Exists)
+            {
+                foreach (var consorcioSnapshot in consorciosSnapshot.Children)
+                {
+                    string consorcioId = consorcioSnapshot.Key;
+                    string consorcioDireccion = consorcioSnapshot.Child("direccion").Value.ToString();
+                    int consorcioLotes = int.Parse(consorcioSnapshot.Child("lotes").Value.ToString());
+
+                    // Mostrar los datos del consorcio en los campos correspondientes
+                    consorcioDireccionText.text = "Dirección: " + consorcioDireccion;
+                    consrocioLotesText.text = "Lotes: " + consorcioLotes.ToString();
+                    Debug.Log($"Consorcio ID: {consorcioId}, Dirección: {consorcioDireccion}, Lotes: {consorcioLotes}");
+                }
+            }
+            else
+            {
+                Debug.Log("No hay consorcios asociados a este usuario.");
+            }
+        }
     }
 }
