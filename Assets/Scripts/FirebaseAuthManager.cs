@@ -72,8 +72,8 @@ public class FirebaseAuthManager : MonoBehaviour
     // Función llamada cuando se presiona el botón de crear consorcio
     public void OnConsorcioCreate()
     {
-        string direccion = "Pueyrredon 1874";
-        int lotes = 20;
+        string direccion = "Burdtwars 923";
+        int lotes = 50;
 
         FirebaseUser user = auth.CurrentUser;
 
@@ -93,6 +93,14 @@ public class FirebaseAuthManager : MonoBehaviour
         FirebaseUser user = auth.CurrentUser;
 
         StartCoroutine(GetConsorciosForUser(user));
+    }
+
+    // Función llamada cuando se presiona el botón de mostrar consorcio
+    public void ModifiConsorcioDireccion()
+    {
+        FirebaseUser user = auth.CurrentUser;
+
+        StartCoroutine(UpdateUserConsorcioDireccion(user, "saenz peña 1251"));
     }
 
     private void InitializeFirebase()
@@ -262,13 +270,13 @@ public class FirebaseAuthManager : MonoBehaviour
         Debug.Log($"Mensaje en pantalla: {message}");
     }
 
-    private IEnumerator CreateConsorcioForUser(FirebaseUser userId, string direccion, int lotes)
+    private IEnumerator CreateConsorcioForUser(FirebaseUser user, string direccion, int lotes)
     {
         string consorcioId = databaseRef.Child("consorcios").Push().Key;
         Consorcios newConsorcio = new Consorcios(direccion, lotes);
         string jsonConsorcio = JsonUtility.ToJson(newConsorcio);
 
-        // Guardar el consorcio en la base de datos
+        // Guardar el consorcio en la base de datos global
         var consorcioTask = databaseRef.Child("consorcios").Child(consorcioId).SetRawJsonValueAsync(jsonConsorcio);
         yield return new WaitUntil(() => consorcioTask.IsCompleted);
 
@@ -280,56 +288,106 @@ public class FirebaseAuthManager : MonoBehaviour
 
         Debug.Log("Consorcio creado correctamente en la base de datos.");
 
-        // Agregar el ID del consorcio a la lista de consorcios del usuario
-        var userConsorciosRef = databaseRef.Child("users").Child(userId.UserId).Child("consorcios").Child(consorcioId);
-        var userConsorcioTask = userConsorciosRef.SetRawJsonValueAsync(jsonConsorcio);
+        // Guardar solo la referencia al consorcio en el nodo del usuario
+        var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios").Child(consorcioId);
+        var userConsorcioTask = userConsorciosRef.SetValueAsync(true); // Guardamos solo `true` en lugar de duplicar la data
         yield return new WaitUntil(() => userConsorcioTask.IsCompleted);
 
         if (userConsorcioTask.Exception != null)
         {
-            Debug.LogError($"Error al actualizar el usuario con el consorcio: {userConsorcioTask.Exception}");
+            Debug.LogError($"Error al asociar el consorcio al usuario: {userConsorcioTask.Exception}");
         }
         else
         {
-            Debug.Log("Consorcio agregado correctamente al usuario.");
+            Debug.Log("Consorcio vinculado correctamente al usuario.");
         }
     }
 
     private IEnumerator GetConsorciosForUser(FirebaseUser user)
     {
-        // Referencia a los consorcios del usuario en la base de datos
         var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
         var consorciosTask = userConsorciosRef.GetValueAsync();
-
         yield return new WaitUntil(() => consorciosTask.IsCompleted);
 
         if (consorciosTask.Exception != null)
         {
             Debug.LogError($"Error al obtener los consorcios del usuario: {consorciosTask.Exception}");
+            yield break;
         }
-        else
+
+        DataSnapshot consorciosSnapshot = consorciosTask.Result;
+
+        if (!consorciosSnapshot.Exists)
         {
-            DataSnapshot consorciosSnapshot = consorciosTask.Result;
+            Debug.Log("No hay consorcios asociados a este usuario.");
+            yield break;
+        }
 
-            // Si el usuario tiene consorcios
-            if (consorciosSnapshot.Exists)
-            {
-                foreach (var consorcioSnapshot in consorciosSnapshot.Children)
-                {
-                    string consorcioId = consorcioSnapshot.Key;
-                    string consorcioDireccion = consorcioSnapshot.Child("direccion").Value.ToString();
-                    int consorcioLotes = int.Parse(consorcioSnapshot.Child("lotes").Value.ToString());
+        foreach (var consorcioSnapshot in consorciosSnapshot.Children)
+        {
+            string consorcioId = consorcioSnapshot.Key;
 
-                    // Mostrar los datos del consorcio en los campos correspondientes
-                    consorcioDireccionText.text = "Dirección: " + consorcioDireccion;
-                    consrocioLotesText.text = "Lotes: " + consorcioLotes.ToString();
-                    Debug.Log($"Consorcio ID: {consorcioId}, Dirección: {consorcioDireccion}, Lotes: {consorcioLotes}");
-                }
-            }
-            else
+            // Ahora obtenemos la info real del consorcio desde "consorcios/{consorcioId}"
+            var consorcioDataTask = databaseRef.Child("consorcios").Child(consorcioId).GetValueAsync();
+            yield return new WaitUntil(() => consorcioDataTask.IsCompleted);
+
+            if (consorcioDataTask.Exception != null)
             {
-                Debug.Log("No hay consorcios asociados a este usuario.");
+                Debug.LogError($"Error al obtener datos del consorcio {consorcioId}: {consorcioDataTask.Exception}");
+                continue;
             }
+
+            DataSnapshot consorcioDataSnapshot = consorcioDataTask.Result;
+            if (consorcioDataSnapshot.Exists)
+            {
+                string consorcioDireccion = consorcioDataSnapshot.Child("direccion").Value.ToString();
+                int consorcioLotes = int.Parse(consorcioDataSnapshot.Child("lotes").Value.ToString());
+
+                // Mostrar los datos en los campos de UI
+                consorcioDireccionText.text = "Dirección: " + consorcioDireccion;
+                consrocioLotesText.text = "Lotes: " + consorcioLotes.ToString();
+                Debug.Log($"Consorcio ID: {consorcioId}, Dirección: {consorcioDireccion}, Lotes: {consorcioLotes}");
+            }
+        }
+    }
+
+    private IEnumerator UpdateUserConsorcioDireccion(FirebaseUser user, string nuevaDireccion)
+    {
+        // Obtener la referencia a los consorcios del usuario actual
+        var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
+        var consorciosTask = userConsorciosRef.GetValueAsync();
+        yield return new WaitUntil(() => consorciosTask.IsCompleted);
+
+        if (consorciosTask.Exception != null)
+        {
+            Debug.LogError($"Error al obtener consorcios del usuario: {consorciosTask.Exception}");
+            yield break;
+        }
+
+        DataSnapshot consorciosSnapshot = consorciosTask.Result;
+
+        if (!consorciosSnapshot.Exists)
+        {
+            Debug.Log("El usuario no tiene consorcios asignados.");
+            yield break;
+        }
+
+        foreach (var consorcio in consorciosSnapshot.Children)
+        {
+            string consorcioId = consorcio.Key;
+
+            // Actualizar la dirección en la base de datos global de consorcios
+            var consorcioRef = databaseRef.Child("consorcios").Child(consorcioId).Child("direccion");
+            var updateTask = consorcioRef.SetValueAsync(nuevaDireccion);
+            yield return new WaitUntil(() => updateTask.IsCompleted);
+
+            if (updateTask.Exception != null)
+            {
+                Debug.LogError($"Error al actualizar la dirección del consorcio {consorcioId}: {updateTask.Exception}");
+                continue;
+            }
+
+            Debug.Log($"Dirección del consorcio {consorcioId} actualizada a: {nuevaDireccion}");
         }
     }
 }
