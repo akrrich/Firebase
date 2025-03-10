@@ -10,9 +10,12 @@ public class FirebaseAuthManager : MonoBehaviour
     private FirebaseAuth auth;
     private DatabaseReference databaseRef;
 
+    [SerializeField] private TextMeshProUGUI currentUserText;
+
     [SerializeField] private TMP_InputField emailInput;
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_InputField usernameInput;
+    [SerializeField] private TMP_InputField consorcioIdInput;
     [SerializeField] private TextMeshProUGUI messageDisplay;
     [SerializeField] private TextMeshProUGUI consorcioDireccionText;
     [SerializeField] private TextMeshProUGUI consrocioLotesText;
@@ -27,12 +30,26 @@ public class FirebaseAuthManager : MonoBehaviour
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.T) && userType == "Admin")
+        if (auth.CurrentUser != null)
         {
-            SendMessageToDatabase("Mensaje de prueba enviado por un Admin.");
+            currentUserText.text = "Hay usuario conectado";
+        }
+
+        else
+        {
+            currentUserText.text = "No hay usuario conectado";
         }
     }
 
+
+    // Función llamada cuando se presiona el botón de registro
+    public void LogOut()
+    {
+        if (auth.CurrentUser != null)
+        {
+            auth.SignOut();
+        }
+    }
 
     // Función llamada cuando se presiona el botón de registro
     public void OnRegisterButtonClicked()
@@ -79,7 +96,7 @@ public class FirebaseAuthManager : MonoBehaviour
 
         if (user != null)
         {
-            StartCoroutine(CreateConsorcioForUser(user, direccion, lotes));
+            StartCoroutine(CreateConsorcioForUserAdmin(user, direccion, lotes));
         }
         else
         {
@@ -92,7 +109,7 @@ public class FirebaseAuthManager : MonoBehaviour
     {
         FirebaseUser user = auth.CurrentUser;
 
-        StartCoroutine(GetConsorciosForUser(user));
+        StartCoroutine(ShowConsorcioInUI(user));
     }
 
     // Función llamada cuando se presiona el botón de mostrar consorcio
@@ -100,7 +117,17 @@ public class FirebaseAuthManager : MonoBehaviour
     {
         FirebaseUser user = auth.CurrentUser;
 
-        StartCoroutine(UpdateUserConsorcioDireccion(user, "saenz peña 1251"));
+        StartCoroutine(ModifyConsorcioDireccion(user, "saenz peña 1251"));
+    }
+
+    // Función llamada cuando se presiona el botón de mostrar consorcio
+    public void JoinConsorcio()
+    {
+        FirebaseUser user = auth.CurrentUser;
+
+        string consorcioId = consorcioIdInput.text;
+
+        StartCoroutine(JoinConsorcio(user, consorcioId));
     }
 
     private void InitializeFirebase()
@@ -144,7 +171,7 @@ public class FirebaseAuthManager : MonoBehaviour
             {
                 Debug.Log("Inicio de sesión exitoso!");
                 StartCoroutine(GetUserType(user)); // Obtener el tipo de usuario
-                StartListeningForMessages(); // Comenzar a escuchar mensajes en tiempo real
+                StartConsorcioListener(user);
             }
             else
             {
@@ -238,39 +265,63 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
-    private void SendMessageToDatabase(string message)
+    private void StartConsorcioListener(FirebaseUser user)
     {
-        string messageId = databaseRef.Child("messages").Push().Key;
-        databaseRef.Child("messages").Child(messageId).SetValueAsync(message);
-    }
+        var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
 
-    private void StartListeningForMessages()
-    {
-        databaseRef.Child("messages").ValueChanged += (object sender, ValueChangedEventArgs args) =>
+        userConsorciosRef.ValueChanged += (sender, e) =>
         {
-            if (args.DatabaseError != null)
+            if (e.DatabaseError != null)
             {
-                Debug.LogError($"Error en la base de datos: {args.DatabaseError.Message}");
+                Debug.LogError($"Error al escuchar cambios en consorcios: {e.DatabaseError.Message}");
                 return;
             }
 
-            string latestMessage = "";
-            foreach (var child in args.Snapshot.Children)
+            DataSnapshot snapshot = e.Snapshot;
+            if (!snapshot.Exists)
             {
-                latestMessage = child.Value.ToString(); // Último mensaje
+                Debug.Log("No hay consorcios asociados a este usuario.");
+                return;
             }
 
-            ShowMessageOnScreen(latestMessage);
+            foreach (var consorcio in snapshot.Children)
+            {
+                string consorcioId = consorcio.Key;
+
+                // Escuchar cambios en la información de cada consorcio asociado
+                var consorcioRef = databaseRef.Child("consorcios").Child(consorcioId);
+                consorcioRef.ValueChanged += (s, ev) => HandleConsorcioDataChange(s, ev, consorcioId);
+            }
         };
     }
 
-    private void ShowMessageOnScreen(string message)
+    private void HandleConsorcioDataChange(object sender, ValueChangedEventArgs e, string consorcioId)
     {
-        messageDisplay.text = message; // Mostrar mensaje en UI
-        Debug.Log($"Mensaje en pantalla: {message}");
+        if (e.DatabaseError != null)
+        {
+            Debug.LogError($"Error al escuchar cambios en consorcio {consorcioId}: {e.DatabaseError.Message}");
+            return;
+        }
+
+        DataSnapshot snapshot = e.Snapshot;
+
+        if (!snapshot.Exists)
+        {
+            Debug.Log($"El consorcio {consorcioId} ya no existe.");
+            return;
+        }
+
+        string nuevaDireccion = snapshot.Child("direccion").Value.ToString();
+        int lotes = int.Parse(snapshot.Child("lotes").Value.ToString());
+
+        // Mostrar en la UI
+        consorcioDireccionText.text = "Dirección: " + nuevaDireccion;
+        consrocioLotesText.text = "Lotes: " + lotes.ToString();
+
+        Debug.Log($"El consorcio {consorcioId} ha sido modificado. Nueva dirección: {nuevaDireccion}");
     }
 
-    private IEnumerator CreateConsorcioForUser(FirebaseUser user, string direccion, int lotes)
+    private IEnumerator CreateConsorcioForUserAdmin(FirebaseUser user, string direccion, int lotes)
     {
         string consorcioId = databaseRef.Child("consorcios").Push().Key;
         Consorcios newConsorcio = new Consorcios(direccion, lotes);
@@ -303,7 +354,7 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
-    private IEnumerator GetConsorciosForUser(FirebaseUser user)
+    private IEnumerator ShowConsorcioInUI(FirebaseUser user)
     {
         var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
         var consorciosTask = userConsorciosRef.GetValueAsync();
@@ -351,7 +402,7 @@ public class FirebaseAuthManager : MonoBehaviour
         }
     }
 
-    private IEnumerator UpdateUserConsorcioDireccion(FirebaseUser user, string nuevaDireccion)
+    private IEnumerator ModifyConsorcioDireccion(FirebaseUser user, string nuevaDireccion)
     {
         // Obtener la referencia a los consorcios del usuario actual
         var userConsorciosRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios");
@@ -388,6 +439,42 @@ public class FirebaseAuthManager : MonoBehaviour
             }
 
             Debug.Log($"Dirección del consorcio {consorcioId} actualizada a: {nuevaDireccion}");
+        }
+    }
+
+    private IEnumerator JoinConsorcio(FirebaseUser user, string consorcioId)
+    {
+        // Verificar si el consorcio existe en la base de datos global
+        var consorcioRef = databaseRef.Child("consorcios").Child(consorcioId);
+        var consorcioTask = consorcioRef.GetValueAsync();
+        yield return new WaitUntil(() => consorcioTask.IsCompleted);
+
+        if (consorcioTask.Exception != null)
+        {
+            Debug.LogError($"Error al verificar el consorcio: {consorcioTask.Exception}");
+            yield break;
+        }
+
+        DataSnapshot consorcioSnapshot = consorcioTask.Result;
+
+        if (!consorcioSnapshot.Exists)
+        {
+            Debug.LogError($"El consorcio con ID {consorcioId} no existe.");
+            yield break;
+        }
+
+        // Asociar el consorcio al usuario
+        var userConsorcioRef = databaseRef.Child("users").Child(user.UserId).Child("consorcios").Child(consorcioId);
+        var userConsorcioTask = userConsorcioRef.SetValueAsync(true);
+        yield return new WaitUntil(() => userConsorcioTask.IsCompleted);
+
+        if (userConsorcioTask.Exception != null)
+        {
+            Debug.LogError($"Error al asociar el consorcio al usuario: {userConsorcioTask.Exception}");
+        }
+        else
+        {
+            Debug.Log($"Usuario {user.UserId} se ha unido correctamente al consorcio {consorcioId}.");
         }
     }
 }
