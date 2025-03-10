@@ -16,7 +16,6 @@ public class FirebaseAuthManager : MonoBehaviour
     [SerializeField] private TMP_InputField passwordInput;
     [SerializeField] private TMP_InputField usernameInput;
     [SerializeField] private TMP_InputField consorcioIdInput;
-    [SerializeField] private TextMeshProUGUI messageDisplay;
     [SerializeField] private TextMeshProUGUI consorcioDireccionText;
     [SerializeField] private TextMeshProUGUI consrocioLotesText;
 
